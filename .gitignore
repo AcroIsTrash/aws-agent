@@ -1,0 +1,5 @@
+*.pem
+*.pem:Zone.Identifier
+.env
+__pycache__/
+*.pyc
