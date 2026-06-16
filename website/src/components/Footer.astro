@@ -1,0 +1,36 @@
+---
+const year = new Date().getFullYear();
+const links = [
+  { href: 'https://github.com/AcroIsTrash', label: 'GitHub' },
+  { href: 'mailto:acrolebrun@gmail.com', label: 'Email' },
+  { href: '/rss.xml', label: 'RSS' },
+];
+---
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <span class="muted">© {year} Joseph Le Brun</span>
+    <nav>
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+    </nav>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--border);
+    margin-top: 4rem;
+    padding: 1.75rem 0;
+  }
+  .footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+  }
+  nav { display: flex; gap: 1.1rem; }
+  nav a { color: var(--text-muted); }
+  nav a:hover { color: var(--text); text-decoration: none; }
+</style>

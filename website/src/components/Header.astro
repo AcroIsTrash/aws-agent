@@ -1,0 +1,62 @@
+---
+const { pathname } = Astro.url;
+const isActive = (path) =>
+  path === '/' ? pathname === '/' : pathname.startsWith(path);
+
+const links = [
+  { href: '/', label: 'Home' },
+  { href: '/articles', label: 'Articles' },
+  { href: '/projects', label: 'Projects' },
+  { href: '/about', label: 'About' },
+];
+---
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/">Joseph&nbsp;Le&nbsp;Brun</a>
+    <nav>
+      {links.map((l) => (
+        <a href={l.href} class={isActive(l.href) ? 'active' : ''}>{l.label}</a>
+      ))}
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: saturate(150%) blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+  }
+  .brand {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+  .brand:hover { text-decoration: none; color: var(--accent); }
+  nav {
+    display: flex;
+    gap: 1.4rem;
+  }
+  nav a {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+  nav a:hover { color: var(--text); text-decoration: none; }
+  nav a.active { color: var(--text); font-weight: 600; }
+  @media (max-width: 460px) {
+    nav { gap: 1rem; }
+    nav a { font-size: 0.9rem; }
+  }
+</style>

@@ -1,0 +1,42 @@
+---
+import BaseLayout from './BaseLayout.astro';
+
+const { title, description, pubDate, updatedDate, tags = [] } = Astro.props;
+
+const fmt = (d) =>
+  new Date(d).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+---
+
+<BaseLayout title={title} description={description}>
+  <article class="prose">
+    <p class="back"><a href="/articles">← All articles</a></p>
+    <header class="article-head">
+      <h1>{title}</h1>
+      <p class="meta muted">
+        <time datetime={new Date(pubDate).toISOString()}>{fmt(pubDate)}</time>
+        {updatedDate && <span> · Updated {fmt(updatedDate)}</span>}
+      </p>
+      {tags.length > 0 && (
+        <div class="tag-row">
+          {tags.map((t) => <span class="tag">{t}</span>)}
+        </div>
+      )}
+    </header>
+    <div class="article-body">
+      <slot />
+    </div>
+  </article>
+
+  <style>
+    .prose { padding: 2.5rem 0 1rem; }
+    .back { font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .article-head { margin-bottom: 2rem; }
+    .meta { font-size: 0.95rem; margin: 0.5rem 0 0.9rem; }
+    .article-body :global(h2) { scroll-margin-top: 80px; }
+    .article-body :global(li) { margin-bottom: 0.35rem; }
+  </style>
+</BaseLayout>

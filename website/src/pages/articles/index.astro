@@ -1,0 +1,67 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const articles = (await getCollection('articles', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+
+const fmt = (d) =>
+  new Date(d).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+---
+
+<BaseLayout
+  title="Articles"
+  description="Essays on AI evaluation, data annotation, and the infrastructure behind machine learning."
+>
+  <section class="page-head">
+    <h1>Articles</h1>
+    <p class="muted">
+      Writing about AI evaluation, data annotation, and the systems that make
+      machine learning work.
+    </p>
+  </section>
+
+  {articles.length === 0 ? (
+    <p class="muted">No articles published yet — check back soon.</p>
+  ) : (
+    <ul class="post-list">
+      {articles.map((a) => (
+        <li>
+          <a href={`/articles/${a.slug}/`}>
+            <h2>{a.data.title}</h2>
+          </a>
+          <p class="meta muted">{fmt(a.data.pubDate)}</p>
+          <p class="desc">{a.data.description}</p>
+          <div class="tag-row">
+            {a.data.tags.map((t) => <span class="tag">{t}</span>)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )}
+</BaseLayout>
+
+<style>
+  .page-head { padding: 2.5rem 0 1.5rem; }
+  .page-head h1 { margin-bottom: 0.4rem; }
+  .post-list { list-style: none; padding: 0; margin: 0; }
+  .post-list li {
+    padding: 1.6rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .post-list li:last-child { border-bottom: none; }
+  .post-list h2 {
+    margin: 0;
+    font-size: 1.35rem;
+    color: var(--text);
+  }
+  .post-list a:hover h2 { color: var(--accent); }
+  .post-list a:hover { text-decoration: none; }
+  .meta { font-size: 0.88rem; margin: 0.3rem 0 0.6rem; }
+  .desc { margin: 0 0 0.85rem; }
+</style>

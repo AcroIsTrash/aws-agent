@@ -1,0 +1,100 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const skills = {
+  'AI & Machine Learning': [
+    'AI Evaluation',
+    'Data Annotation',
+    'LLM Training Workflows',
+    'Python',
+    'LangChain / LangGraph',
+  ],
+  'Cloud & Infrastructure': [
+    'AWS (EC2, VPC)',
+    'Terraform',
+    'Docker',
+    'Linux',
+    'Networking (CCNA in progress)',
+  ],
+  'Operations & Leadership': [
+    'Team Leadership',
+    'Performance Management',
+    'Quality Control',
+    'Process Documentation',
+  ],
+};
+---
+
+<BaseLayout
+  title="About"
+  description="Joseph Le Brun — AI evaluator, data annotator, and infrastructure tinkerer based in Texas."
+>
+  <section class="about">
+    <h1>About</h1>
+
+    <p class="lead">
+      I'm Joseph Le Brun — an AI response evaluator and data annotator based in
+      Texas, currently studying for my Cisco CCNA and building cloud
+      infrastructure for AI workloads on the side.
+    </p>
+
+    <p>
+      I came to AI work from an unusual direction: warehouse operations. For
+      years I supervised teams in high-volume distribution environments — UPS,
+      Nordstrom, EA Sween — where the whole job came down to one question: can
+      you tell the difference between something that's right and something that
+      just looks right? That's quality control, and it turns out to be exactly
+      the muscle AI evaluation demands.
+    </p>
+
+    <p>
+      Today I work remotely evaluating AI-generated responses for quality,
+      accuracy, and alignment with human preferences — the human judgment layer
+      that makes large language models actually useful. The flexibility of that
+      work matters to me: it let me keep building a career while being present
+      for my first child. Alongside the evaluation work, I'm teaching myself the
+      infrastructure side — networking, AWS, Terraform, containers — so I
+      understand the systems AI runs on from the network layer up, not just the
+      app layer.
+    </p>
+
+    <p>
+      This site is where I write about that work and show what I'm building.
+      Most of it is in public and improved in layers — shipped a little ugly,
+      then made better over time.
+    </p>
+
+    <h2>What I work with</h2>
+    {Object.entries(skills).map(([group, items]) => (
+      <div class="skill-group">
+        <h3>{group}</h3>
+        <div class="tag-row">
+          {items.map((s) => <span class="tag">{s}</span>)}
+        </div>
+      </div>
+    ))}
+
+    <h2>Get in touch</h2>
+    <p>
+      The fastest way to reach me is email. I'm always open to talking about AI
+      evaluation work, infrastructure, or how people from non-traditional
+      backgrounds can break into this field.
+    </p>
+    <div class="contact-actions">
+      <a class="button" href="mailto:acrolebrun@gmail.com">Email me</a>
+      <a class="button secondary" href="https://github.com/AcroIsTrash">GitHub</a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .about { padding: 2.5rem 0 1rem; }
+  .lead {
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+  }
+  .skill-group { margin-bottom: 1.25rem; }
+  .skill-group h3 { margin: 1.1rem 0 0.6rem; font-size: 1rem; }
+  .contact-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
+</style>

@@ -1,0 +1,155 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const articles = (await getCollection('articles', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 3);
+
+const projects = (await getCollection('projects'))
+  .sort((a, b) => a.data.order - b.data.order || b.data.startDate - a.data.startDate)
+  .slice(0, 3);
+
+const fmt = (d) =>
+  new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+---
+
+<BaseLayout>
+  <section class="hero">
+    <h1>Joseph Le Brun</h1>
+    <p class="tagline">
+      I evaluate AI systems for a living and build the infrastructure they run
+      on. I write about the human judgment behind machine learning — and the
+      networking, cloud, and tooling underneath it.
+    </p>
+    <div class="hero-actions">
+      <a class="button" href="/articles">Read the articles</a>
+      <a class="button secondary" href="/projects">See what I'm building</a>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-title">
+      <h2>Projects</h2>
+      <a href="/projects" class="muted small">All projects →</a>
+    </div>
+    <div class="grid">
+      {projects.map((p) => (
+        <a class="card" href={`/projects/#${p.slug}`}>
+          <div class="card-top">
+            <h3>{p.data.title}</h3>
+            <span class={`status status-${p.data.status}`}>{p.data.status}</span>
+          </div>
+          <p class="muted">{p.data.description}</p>
+          <div class="tag-row">
+            {p.data.tags.slice(0, 4).map((t) => <span class="tag">{t}</span>)}
+          </div>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section>
+    <div class="section-title">
+      <h2>Recent writing</h2>
+      <a href="/articles" class="muted small">All articles →</a>
+    </div>
+    <ul class="post-list">
+      {articles.map((a) => (
+        <li>
+          <a href={`/articles/${a.slug}/`}>
+            <span class="post-title">{a.data.title}</span>
+            <span class="post-date muted">{fmt(a.data.pubDate)}</span>
+          </a>
+          <p class="muted post-desc">{a.data.description}</p>
+        </li>
+      ))}
+    </ul>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    padding: 3.5rem 0 3rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2.5rem;
+  }
+  .tagline {
+    font-size: 1.2rem;
+    color: var(--text-muted);
+    max-width: 38rem;
+    margin: 0.75rem 0 1.75rem;
+  }
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+  .small { font-size: 0.9rem; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  @media (min-width: 620px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  .card {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    color: inherit;
+    box-shadow: var(--shadow);
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  .card:hover {
+    text-decoration: none;
+    transform: translateY(-2px);
+    border-color: var(--accent);
+  }
+  .card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .card h3 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+  .card p { font-size: 0.95rem; margin: 0 0 0.9rem; }
+
+  .status {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .status-active { background: #dcfce7; color: #166534; }
+  .status-shipped { background: #dbeafe; color: #1e40af; }
+  .status-paused { background: #fef3c7; color: #92400e; }
+  .status-planned { background: var(--bg-subtle); color: var(--text-muted); }
+  @media (prefers-color-scheme: dark) {
+    .status-active { background: #14331f; color: #4ade80; }
+    .status-shipped { background: #15233b; color: #7db0ff; }
+    .status-paused { background: #3a2e10; color: #fbbf24; }
+  }
+
+  .post-list { list-style: none; padding: 0; margin: 0; }
+  .post-list li {
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .post-list li:last-child { border-bottom: none; }
+  .post-list a {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .post-list a:hover { text-decoration: none; color: var(--accent); }
+  .post-date { font-size: 0.85rem; font-weight: 400; white-space: nowrap; }
+  .post-desc { font-size: 0.95rem; margin: 0.3rem 0 0; }
+</style>
