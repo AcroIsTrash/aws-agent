@@ -74,6 +74,55 @@ resource "aws_security_group" "agent" {
   tags = { Name = "aws-agent-sg" }
 }
 
+# ── Container registry (ECR) ──────────────────────────────────────────────────
+# Layer 3, Step 1: a private registry to hold the agent image. CI builds the
+# image once and pushes it here; EC2 pulls it. The repo is created empty —
+# the first image arrives via the manual push verification, then the pipeline.
+
+resource "aws_ecr_repository" "agent" {
+  name = "aws-agent"
+
+  # IMMUTABLE: a tag, once pushed, can never be overwritten. This makes the
+  # git-SHA tags from the pipeline a trustworthy rollback target — :a1b2c3d
+  # always means that exact build. Trade-off: you deploy by SHA tag, never by
+  # re-pushing a moving :latest.
+  image_tag_mutability = "IMMUTABLE"
+
+  # Free CVE scan on every push. Cheap portfolio point, surfaces known
+  # vulnerabilities in the image without any extra tooling.
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  # Dev convenience: let `terraform destroy` delete the repo even if it still
+  # holds images. In production you'd leave this false so the registry can't be
+  # torn down by accident.
+  force_delete = true
+
+  tags = { Name = "aws-agent" }
+}
+
+# Auto-expire old untagged images so storage stays near-zero on free tier.
+# Untagged images pile up every time an immutable tag is replaced by a newer
+# build; nothing references them, so reap them after a day.
+resource "aws_ecr_lifecycle_policy" "agent" {
+  repository = aws_ecr_repository.agent.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Expire untagged images after 1 day"
+      selection = {
+        tagStatus   = "untagged"
+        countType   = "sinceImagePushed"
+        countUnit   = "days"
+        countNumber = 1
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
 # ── EC2 ───────────────────────────────────────────────────────────────────────
 
 data "aws_ami" "ubuntu" {
@@ -117,4 +166,9 @@ resource "aws_instance" "agent" {
 output "instance_public_ip" {
   description = "SSH in with: ssh -i AgentServer.pem ubuntu@<ip>"
   value       = aws_instance.agent.public_ip
+}
+
+output "ecr_repository_url" {
+  description = "Registry URI to tag/push against: <acct>.dkr.ecr.<region>.amazonaws.com/aws-agent"
+  value       = aws_ecr_repository.agent.repository_url
 }
