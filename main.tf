@@ -17,7 +17,7 @@ provider "aws" {
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
-  tags = { Name = "aws-agent-vpc" }
+  tags                 = { Name = "aws-agent-vpc" }
 }
 
 resource "aws_subnet" "public" {
@@ -25,7 +25,7 @@ resource "aws_subnet" "public" {
   cidr_block              = "10.0.1.0/24"
   map_public_ip_on_launch = true
   availability_zone       = "us-east-1a"
-  tags = { Name = "aws-agent-public" }
+  tags                    = { Name = "aws-agent-public" }
 }
 
 resource "aws_internet_gateway" "igw" {
