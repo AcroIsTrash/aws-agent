@@ -372,9 +372,10 @@ jobs:
           echo "REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
 
       # Tell the box (matched by tag) to pull the new image, then WAIT and fail
-      # the job if the deploy didn't succeed. `set -e -o pipefail` on the box
-      # makes a failed login/pull a real failure (not masked by the prune). If no
-      # instance is running, there are no invocations and we skip cleanly.
+      # the job if the deploy didn't succeed. `set -e` on the box (SSM runs it
+      # under /bin/sh, so no pipefail) makes a failed login/pull a real failure
+      # (not masked by the prune). If no instance is running, there are no
+      # invocations and we skip cleanly.
       - name: Deploy to EC2 via SSM
         run: |
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
@@ -383,7 +384,7 @@ jobs:
             --targets "Key=tag:Name,Values=aws-agent" \
             --comment "Deploy $IMAGE_TAG" \
             --parameters commands="[\
-              \"set -e -o pipefail\",\
+              \"set -e\",\
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY\",\
               \"docker pull $IMAGE\",\
               \"docker image prune -f\"]" \

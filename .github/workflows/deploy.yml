@@ -52,8 +52,9 @@ jobs:
 
       # Tell the box (matched by tag Name=aws-agent) to pull the new image, then
       # WAIT for the SSM command and fail the job if the deploy didn't succeed.
-      # `set -e -o pipefail` on the box ensures a failed login/pull is a real
-      # failure, not masked by the trailing prune. If no instance is running
+      # `set -e` on the box (which runs the command under /bin/sh, so no
+      # pipefail) ensures a failed login/pull is a real failure, not masked by
+      # the trailing prune. If no instance is running
       # (EC2 intentionally off), there are no invocations and we skip cleanly.
       - name: Deploy to EC2 via SSM
         run: |
@@ -63,7 +64,7 @@ jobs:
             --targets "Key=tag:Name,Values=aws-agent" \
             --comment "Deploy $IMAGE_TAG" \
             --parameters commands="[\
-              \"set -e -o pipefail\",\
+              \"set -e\",\
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY\",\
               \"docker pull $IMAGE\",\
               \"docker image prune -f\"]" \
