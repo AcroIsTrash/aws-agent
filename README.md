@@ -117,7 +117,7 @@ Nothing dramatic broke, but these were the real friction points to watch for:
 - **Security group blocking outbound API calls** — checked the rule explicitly before assuming connectivity. Default AWS egress is open, but worth verifying rather than debugging blindly later.
 - **SSH open to `0.0.0.0/0`** — the Layer 2 Terraform security group allows inbound SSH from any IP (`0.0.0.0/0`). This is not production standard; in production, inbound SSH should be restricted to a known CIDR (your office IP, a bastion host, or a VPN range). Left open here for development convenience.
 - **API key exposure** — `.pem` file and any file containing the key are in `.gitignore`. Verified before the first `git push`.
-- **Instance left running** — instance is stopped when not actively in use. Termination is the plan once Layer 2 replaces this setup.
+- **Instance left running** — the instance was stopped when not actively in use, then **terminated** (along with its root EBS volume) once Layer 2 replaced this setup. The Layer 1 box was console-built and never Terraform-managed, so `terraform destroy` didn't touch it; it was terminated by hand on 2026-06-23.
 - **Free tier drift** — `t3.micro` is free-tier eligible, but `t3.small` and above are not. Stayed on `micro` and left the billing alarm as a backstop.
 
 ---
@@ -130,7 +130,7 @@ This is the ugly version on purpose. The next layers make it reproducible and pr
 Done. Docker + full Terraform-managed VPC, security group, and EC2 instance. See the Layer 2 section above.
 
 **Layer 3 — CI/CD**
-GitHub Actions pipeline. Push to main, image builds, agent redeploys automatically. No more manual SSH to pull and rebuild.
+GitHub Actions pipeline. Push to master, image builds, agent redeploys automatically. No more manual SSH to pull and rebuild.
 
 **Layer 4 — Observability + self-hosted model**
 Structured logging, cost dashboards, alerting. Swap the OpenAI API for a local Ollama model on a larger instance — the capstone that ties the whole infra story together.

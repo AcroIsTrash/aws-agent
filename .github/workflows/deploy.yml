@@ -1,0 +1,65 @@
+# Layer 3, Step 3: CI/CD pipeline.
+#
+# Runs on every push to main. On GitHub's runner it: assumes the Step 2 IAM role
+# via OIDC (no stored keys), builds the image, pushes it to ECR, then tells the
+# EC2 box (via SSM) to pull the new image. GitHub builds -> ECR stores -> EC2 pulls.
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+# OIDC requires id-token:write so the runner can mint its token.
+# contents:read is for the checkout. Nothing more is granted.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: aws-agent
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Mint the OIDC token and assume the Step 2 role. The ARN is not a secret.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::854970834208:role/aws-agent-github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Tag by git SHA: the repo is IMMUTABLE, so there is no moving :latest.
+      # Every running image traces back to an exact commit; rollback = deploy an
+      # older SHA.
+      - name: Build, tag (by SHA), and push
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          docker build -t "$REGISTRY/$ECR_REPOSITORY:$SHA" .
+          docker push "$REGISTRY/$ECR_REPOSITORY:$SHA"
+          echo "IMAGE_TAG=$SHA" >> "$GITHUB_ENV"
+          echo "REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
+
+      # Tell the box (matched by tag Name=aws-agent) to pull the new image.
+      # If no instance is running yet, the command simply finds no target.
+      - name: Deploy to EC2 via SSM
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Name,Values=aws-agent" \
+            --comment "Deploy $IMAGE_TAG" \
+            --parameters commands="[\
+              \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY\",\
+              \"docker pull $IMAGE\",\
+              \"docker image prune -f\"]"
