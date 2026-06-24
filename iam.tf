@@ -102,6 +102,17 @@ resource "aws_iam_role_policy" "github_actions" {
         Action   = "ssm:SendCommand"
         Resource = "arn:aws:ssm:us-east-1::document/AWS-RunShellScript"
       },
+      {
+        # The workflow polls the command status to fail on a bad deploy. These
+        # read-only actions don't support resource-level scoping, so "*".
+        Sid    = "SSMPollStatus"
+        Effect = "Allow"
+        Action = [
+          "ssm:ListCommandInvocations",
+          "ssm:GetCommandInvocation",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }
