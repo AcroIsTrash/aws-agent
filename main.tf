@@ -158,6 +158,10 @@ resource "aws_instance" "agent" {
     systemctl enable docker
     usermod -aG docker ubuntu
 
+    # AWS CLI — required so the SSM deploy can authenticate to ECR (Layer 3 Step 3).
+    # Without this the deploy's `aws ecr get-login-password` fails with `aws: not found`.
+    snap install aws-cli --classic
+
     git clone https://github.com/AcroIsTrash/aws-agent.git /opt/aws-agent
     cd /opt/aws-agent
     docker build -t aws-agent .

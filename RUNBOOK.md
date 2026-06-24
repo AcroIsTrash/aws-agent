@@ -360,25 +360,69 @@ jobs:
           echo "IMAGE_TAG=$SHA" >> "$GITHUB_ENV"
           echo "REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
 
-      # Tell the box (matched by tag) to pull the new image. Skips cleanly if no
-      # instance is running yet — Step 6 only matters once EC2 is up.
+      # Tell the box (matched by tag) to pull the new image, then WAIT and fail
+      # the job if the deploy didn't succeed. `set -e -o pipefail` on the box
+      # makes a failed login/pull a real failure (not masked by the prune). If no
+      # instance is running, there are no invocations and we skip cleanly.
       - name: Deploy to EC2 via SSM
         run: |
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          aws ssm send-command \
+          CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Name,Values=aws-agent" \
             --comment "Deploy $IMAGE_TAG" \
             --parameters commands="[\
+              \"set -e -o pipefail\",\
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY\",\
               \"docker pull $IMAGE\",\
-              \"docker image prune -f\"]"
+              \"docker image prune -f\"]" \
+            --query "Command.CommandId" --output text)
+          echo "SSM CommandId: $CMD_ID"
+
+          INSTANCES=""
+          for _ in $(seq 1 6); do
+            INSTANCES=$(aws ssm list-command-invocations --command-id "$CMD_ID" \
+              --query "CommandInvocations[].InstanceId" --output text)
+            [ -n "$INSTANCES" ] && break
+            sleep 5
+          done
+
+          if [ -z "$INSTANCES" ]; then
+            echo "No running instance tagged Name=aws-agent — skipping deploy."
+            exit 0
+          fi
+
+          rc=0
+          for i in $INSTANCES; do
+            status=InProgress
+            for _ in $(seq 1 30); do
+              status=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+                --instance-id "$i" --query "Status" --output text)
+              case "$status" in
+                Success) break ;;
+                Failed|Cancelled|TimedOut) break ;;
+                *) sleep 10 ;;
+              esac
+            done
+            if [ "$status" != "Success" ]; then
+              rc=1
+              echo "::error::Deploy to $i ended in status: $status"
+              aws ssm get-command-invocation --command-id "$CMD_ID" \
+                --instance-id "$i" --query "StandardErrorContent" --output text
+            fi
+          done
+          exit $rc
 ```
+
+> **The box needs the AWS CLI.** The deploy authenticates to ECR with
+> `aws ecr get-login-password`, so `user_data` in `main.tf` installs it
+> (`snap install aws-cli --classic`) alongside Docker. Without it the deploy
+> fails with `aws: not found`.
 
 ### Phase A — Prove build + push (no EC2 needed)
 
 Commit the workflow and push to `master`. Stages 1–5 run on GitHub's runner with
-no box required; stage 6 finds no matching instance and simply affects nothing.
+no box required; stage 6 finds no matching instance and skips cleanly (exit 0).
 
 ```bash
 git add .github/workflows/deploy.yml
@@ -399,24 +443,43 @@ aws ecr list-images --repository-name aws-agent --region us-east-1
 
 ### Phase B — Prove the deploy stage (EC2 required, briefly)
 
-Only when you want to confirm stage 6 end-to-end. Bring the box up, push again
-(or re-run the job) so the deploy targets a live instance, confirm the pull, then
-tear the box back down to stay free.
+Only when you want to confirm stage 6 end-to-end. Bring the box up, wait for it
+to register with SSM and finish cloud-init, then trigger the pipeline with a
+**new commit** (the repo is IMMUTABLE — re-running an existing commit fails on
+`docker push`). The deploy step now waits and reports the real status itself, so
+a green run *means* the image landed. Then tear the box back down to stay free.
 
 ```bash
-terraform apply            # full apply: brings up VPC + EC2 with the instance profile
-# ... trigger the workflow (push a commit or `gh run rerun <id>`) ...
+terraform apply -auto-approve     # full apply: VPC + EC2 with the instance profile
 
-# Confirm the SSM command landed and the image is on the box:
-aws ssm list-command-invocations --region us-east-1 \
-  --query "CommandInvocations[0].{Status:Status,Instance:InstanceId}" --output table
+# Wait until the box is an Online managed instance and cloud-init is done:
+aws ssm describe-instance-information --region us-east-1 \
+  --query "InstanceInformationList[].{Id:InstanceId,Ping:PingStatus}" --output table
 
-terraform destroy          # back to free tier when done
+# Trigger the pipeline (new SHA). An empty commit is the cleanest:
+git commit --allow-empty -m "Deploy test"
+git push origin master
+gh run watch   # the Deploy step now polls SSM and fails if the pull fails
 ```
 
-> **End-to-end trust is proven here, not before.** The first green Phase A run is
-> the real confirmation that the Step 2 OIDC role assumption works. Phase B
-> confirms the SSM deploy path.
+**Teardown — TARGETED, not a bare `terraform destroy`.** A plain destroy would
+also delete the ECR repo (and its images) and the Step 2 IAM, since they share
+one state. Destroy only the VPC + EC2 that Phase B added:
+
+```bash
+terraform destroy \
+  -target=aws_instance.agent \
+  -target=aws_route_table_association.public \
+  -target=aws_route_table.public \
+  -target=aws_internet_gateway.igw \
+  -target=aws_subnet.public \
+  -target=aws_security_group.agent \
+  -target=aws_vpc.main
+```
+
+> **End-to-end trust is proven here, not before.** The first green Phase A run
+> confirms the Step 2 OIDC role assumption works. Phase B confirms the SSM deploy
+> path actually pulls the image onto the box.
 
 ### Note — IMMUTABLE means deploy by SHA, not `:latest`
 

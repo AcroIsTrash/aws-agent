@@ -50,16 +50,58 @@ jobs:
           echo "IMAGE_TAG=$SHA" >> "$GITHUB_ENV"
           echo "REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
 
-      # Tell the box (matched by tag Name=aws-agent) to pull the new image.
-      # If no instance is running yet, the command simply finds no target.
+      # Tell the box (matched by tag Name=aws-agent) to pull the new image, then
+      # WAIT for the SSM command and fail the job if the deploy didn't succeed.
+      # `set -e -o pipefail` on the box ensures a failed login/pull is a real
+      # failure, not masked by the trailing prune. If no instance is running
+      # (EC2 intentionally off), there are no invocations and we skip cleanly.
       - name: Deploy to EC2 via SSM
         run: |
           IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          aws ssm send-command \
+          CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Name,Values=aws-agent" \
             --comment "Deploy $IMAGE_TAG" \
             --parameters commands="[\
+              \"set -e -o pipefail\",\
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY\",\
               \"docker pull $IMAGE\",\
-              \"docker image prune -f\"]"
+              \"docker image prune -f\"]" \
+            --query "Command.CommandId" --output text)
+          echo "SSM CommandId: $CMD_ID"
+
+          # Targeting is async; give invocations a chance to register.
+          INSTANCES=""
+          for _ in $(seq 1 6); do
+            INSTANCES=$(aws ssm list-command-invocations --command-id "$CMD_ID" \
+              --query "CommandInvocations[].InstanceId" --output text)
+            [ -n "$INSTANCES" ] && break
+            sleep 5
+          done
+
+          if [ -z "$INSTANCES" ]; then
+            echo "No running instance tagged Name=aws-agent — nothing to deploy to. Skipping."
+            exit 0
+          fi
+
+          rc=0
+          for i in $INSTANCES; do
+            echo "Waiting for deploy on $i ..."
+            status=InProgress
+            for _ in $(seq 1 30); do
+              status=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+                --instance-id "$i" --query "Status" --output text)
+              case "$status" in
+                Success) echo "  $i: Success"; break ;;
+                Failed|Cancelled|TimedOut) break ;;
+                *) sleep 10 ;;
+              esac
+            done
+            if [ "$status" != "Success" ]; then
+              rc=1
+              echo "::error::Deploy to $i ended in status: $status"
+              aws ssm get-command-invocation --command-id "$CMD_ID" \
+                --instance-id "$i" --query "StandardErrorContent" --output text
+            fi
+          done
+          exit $rc
