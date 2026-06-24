@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
   required_version = ">= 1.0"
 }
@@ -140,7 +144,8 @@ resource "aws_instance" "agent" {
   instance_type          = "t3.micro"
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.agent.id]
-  key_name               = "AgentServer" # key pair already in AWS from Layer 1
+  iam_instance_profile   = aws_iam_instance_profile.ec2.name # Layer 3 Step 2: SSM + ECR pull
+  key_name               = "AgentServer"                     # key pair already in AWS from Layer 1
 
   # Install Docker, clone the repo, and pre-build the image.
   # The agent is a CLI REPL, so you run it interactively after SSHing in.
