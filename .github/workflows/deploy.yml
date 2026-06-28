@@ -5,7 +5,7 @@ name: Build and push agent image
 # build job (needs:), so a broken build never reaches the instance.
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 # OIDC role assumption needs id-token: write. contents: read is least-privilege

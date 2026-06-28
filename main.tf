@@ -8,8 +8,13 @@ terraform {
   required_version = ">= 1.0"
 }
 
+variable "aws_region" {
+  description = "AWS region for all resources"
+  default     = "us-east-1"
+}
+
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
 }
 
 # ── Networking ────────────────────────────────────────────────────────────────
@@ -202,6 +207,118 @@ resource "aws_instance" "agent" {
   tags = { Name = "aws-agent" }
 }
 
+# ── GitHub Actions OIDC (runner identity) ─────────────────────────────────────
+# Layer 3, Step 2: the CI runner assumes this role via OIDC — no static AWS keys
+# stored in GitHub. Trust is scoped to this exact repo so forks can't assume it.
+
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+
+  # The audience GitHub Actions requests when minting the OIDC token.
+  client_id_list = ["sts.amazonaws.com"]
+
+  # GitHub's OIDC thumbprint (stable; rotated by GitHub, not by us).
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+}
+
+data "aws_iam_policy_document" "github_oidc_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    # Scope to this repo only — any branch/event. Tighten to :ref:refs/heads/master
+    # if you want to restrict to master pushes only.
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:AcroIsTrash/aws-agent:*"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_runner" {
+  name               = "aws-agent-github-runner"
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_assume.json
+  tags               = { Name = "aws-agent-github-runner" }
+}
+
+# Least-privilege for the build-and-push job: push to this ECR repo only.
+data "aws_iam_policy_document" "runner_ecr_push" {
+  # GetAuthorizationToken is account-scoped — cannot be narrowed to one repo.
+  statement {
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+    ]
+    resources = [
+      "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/aws-agent"
+    ]
+  }
+}
+
+resource "aws_iam_policy" "runner_ecr_push" {
+  name   = "aws-agent-runner-ecr-push"
+  policy = data.aws_iam_policy_document.runner_ecr_push.json
+}
+
+resource "aws_iam_role_policy_attachment" "runner_ecr" {
+  role       = aws_iam_role.github_runner.name
+  policy_arn = aws_iam_policy.runner_ecr_push.arn
+}
+
+# Least-privilege for the deploy job: SSM SendCommand on this instance + the
+# standard document; GetCommandInvocation to read the result back.
+data "aws_iam_policy_document" "runner_ssm_deploy" {
+  statement {
+    actions   = ["ssm:SendCommand"]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
+      aws_instance.agent.arn,
+    ]
+  }
+
+  statement {
+    actions   = ["ssm:GetCommandInvocation"]
+    resources = ["*"]
+  }
+
+  # The deploy step calls sts:GetCallerIdentity to derive the account ID.
+  statement {
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "runner_ssm_deploy" {
+  name   = "aws-agent-runner-ssm-deploy"
+  policy = data.aws_iam_policy_document.runner_ssm_deploy.json
+}
+
+resource "aws_iam_role_policy_attachment" "runner_ssm" {
+  role       = aws_iam_role.github_runner.name
+  policy_arn = aws_iam_policy.runner_ssm_deploy.arn
+}
+
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 output "instance_public_ip" {
@@ -212,4 +329,9 @@ output "instance_public_ip" {
 output "ecr_repository_url" {
   description = "Registry URI to tag/push against: <acct>.dkr.ecr.<region>.amazonaws.com/aws-agent"
   value       = aws_ecr_repository.agent.repository_url
+}
+
+output "github_runner_role_arn" {
+  description = "Set this as the AWS_ROLE_ARN secret in the GitHub repo"
+  value       = aws_iam_role.github_runner.arn
 }
