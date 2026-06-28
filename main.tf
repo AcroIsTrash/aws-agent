@@ -123,6 +123,44 @@ resource "aws_ecr_lifecycle_policy" "agent" {
   })
 }
 
+# ── IAM: EC2 instance profile (SSM + ECR pull) ────────────────────────────────
+# Layer 3, Step 5: the CI/CD deploy uses SSM Run Command to tell the box to pull
+# the new image. For that the instance needs (1) SSM agent connectivity and
+# (2) permission to pull from ECR — both granted through this instance profile.
+
+data "aws_iam_policy_document" "ec2_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "agent" {
+  name               = "aws-agent-ec2"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
+  tags               = { Name = "aws-agent-ec2" }
+}
+
+# Lets SSM Run Command reach the instance (the deploy mechanism).
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.agent.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Read-only ECR so the box can `docker pull` — it never pushes.
+resource "aws_iam_role_policy_attachment" "ecr_pull" {
+  role       = aws_iam_role.agent.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+resource "aws_iam_instance_profile" "agent" {
+  name = "aws-agent-ec2"
+  role = aws_iam_role.agent.name
+}
+
 # ── EC2 ───────────────────────────────────────────────────────────────────────
 
 data "aws_ami" "ubuntu" {
@@ -141,14 +179,17 @@ resource "aws_instance" "agent" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.agent.id]
   key_name               = "AgentServer" # key pair already in AWS from Layer 1
+  iam_instance_profile   = aws_iam_instance_profile.agent.name
 
-  # Install Docker, clone the repo, and pre-build the image.
-  # The agent is a CLI REPL, so you run it interactively after SSHing in.
+  # Install Docker, git, and the AWS CLI. The CLI is needed so the SSM deploy
+  # can run `aws ecr get-login-password` on the box. The SSM agent itself ships
+  # preinstalled on Canonical's Ubuntu AMI — the instance profile is what
+  # actually activates it.
   user_data = <<-EOF
     #!/bin/bash
     set -e
     apt-get update -y
-    apt-get install -y docker.io git
+    apt-get install -y docker.io git awscli
     systemctl start docker
     systemctl enable docker
     usermod -aG docker ubuntu
