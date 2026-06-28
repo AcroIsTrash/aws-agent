@@ -1,9 +1,11 @@
 name: Build and push agent image
 
-# Step 4 scope: build the image and push it to ECR.
-# Manual trigger for now so it's testable in isolation; Step 6 adds the
-# push-to-main trigger, and Step 5 appends the deploy job.
+# Runs automatically on merge to main (Step 6), and stays manually runnable
+# via workflow_dispatch for re-runs/testing. The deploy job is gated behind the
+# build job (needs:), so a broken build never reaches the instance.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 # OIDC role assumption needs id-token: write. contents: read is least-privilege
