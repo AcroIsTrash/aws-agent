@@ -151,7 +151,10 @@ resource "aws_instance" "agent" {
   # The agent is a CLI REPL, so you run it interactively after SSHing in.
   user_data = <<-EOF
     #!/bin/bash
-    set -e
+    set -euo pipefail
+    # Retry apt-get update a few times: the IGW/route table may not be propagated
+    # yet when cloud-init runs on a brand-new instance, causing a transient failure.
+    for i in 1 2 3; do apt-get update -y && break || sleep 15; done
     apt-get update -y
     apt-get install -y docker.io git
     systemctl start docker

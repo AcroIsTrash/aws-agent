@@ -8,6 +8,7 @@ name: Deploy
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 # OIDC requires id-token:write so the runner can mint its token.
 # contents:read is for the checkout. Nothing more is granted.
