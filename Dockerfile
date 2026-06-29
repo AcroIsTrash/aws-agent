@@ -3,6 +3,7 @@
 # Run:    docker run -it -e OPENAI_API_KEY=sk-... aws-agent
 
 FROM python:3.13-slim
+INTENTIONAL_BREAK_FOR_PIPELINE_TEST
 
 # Don't write .pyc files; flush stdout/stderr so logs appear in real time.
 ENV PYTHONDONTWRITEBYTECODE=1 \
