@@ -1,6 +1,6 @@
 # AWS AI Agent — Infrastructure-Up Portfolio Project
 
-A LangChain calculator agent deployed to AWS EC2. The point isn't the agent — it's the infra it runs on. This is Layer 1 of a four-layer project that builds toward containerized, Terraform-managed, CI/CD-deployed, observable AI infrastructure.
+A LangChain calculator agent deployed to AWS EC2. The point isn't the agent — it's the infra it runs on. This is a four-layer project building toward containerized, Terraform-managed, CI/CD-deployed, observable AI infrastructure.
 
 ---
 
@@ -122,18 +122,46 @@ Nothing dramatic broke, but these were the real friction points to watch for:
 
 ---
 
+## Layer 3 — CI/CD
+
+Push to `master` → image builds → agent redeploys automatically. No manual SSH, no `scp`.
+
+### Pipeline shape
+
+One GitHub Actions job (`build-and-deploy`) does everything:
+
+1. Authenticates to AWS via **GitHub OIDC** — no long-lived keys stored in GitHub secrets. The runner assumes a least-privilege IAM role scoped to this repo only.
+2. Logs in to **Amazon ECR** (private registry, inside the same AWS account as the instance).
+3. **Builds** the image from the Dockerfile; **tags it by git SHA** and pushes to ECR. The repo is `IMMUTABLE` — a tag, once pushed, can never be overwritten, so every SHA is a reliable rollback target.
+4. **Deploys** via **AWS SSM Run Command** — tells the instance to pull the new image by tag. No inbound SSH from the runner, no SSH key in GitHub secrets. The instance needs only an IAM instance profile with SSM + ECR-pull permissions.
+
+### Key decisions
+
+| Decision | What was chosen | Why |
+|----------|-----------------|-----|
+| Image registry | Amazon ECR (private) | Keeps the whole stack inside AWS; native IAM auth, no separate credentials |
+| Deploy mechanism | SSM Run Command | No inbound SSH path needed; no long-lived key to store or leak |
+| Runner auth | GitHub OIDC → IAM role | Short-lived token per job; nothing to rotate |
+| Image tags | Immutable SHA-only | Every running image traces to an exact commit; rollback = re-deploy an older SHA |
+
+### Friction points
+
+- **Instance profile ghost association** — Terraform's destroy/recreate of the IAM instance profile left the EC2 instance bound to the old (deleted) profile ID. AWS propagates the profile by name, not ID, but the metadata service still returned 404 until a manual disassociate + reassociate was run. Lesson: when Terraform recreates a same-named IAM resource, verify the EC2 association is pointing at the new one.
+- **user_data race with the IGW** — the bootstrap script ran at first boot before the Internet Gateway route was fully propagated, causing `apt-get update` to fail silently (masked by `set -e` exiting early). Fixed with a retry loop; Docker and the AWS CLI had to be installed manually on the existing instance.
+- **`awscli` removed from Ubuntu noble** — the `awscli` apt package was dropped in Ubuntu 24.04. The fix is the AWS CLI v2 installer from `awscli.amazonaws.com`, not the apt package.
+
+---
+
 ## What's next
 
-This is the ugly version on purpose. The next layers make it reproducible and professional:
-
 **Layer 2 — Containerize + Terraform** ✅
-Done. Docker + full Terraform-managed VPC, security group, and EC2 instance. See the Layer 2 section above.
+Docker + full Terraform-managed VPC, security group, ECR registry, and EC2 instance. Nothing clicked in the console.
 
-**Layer 3 — CI/CD**
-GitHub Actions pipeline. Push to master, image builds, agent redeploys automatically. No more manual SSH to pull and rebuild.
+**Layer 3 — CI/CD** ✅
+GitHub Actions pipeline: OIDC auth → ECR build/push by SHA → SSM deploy. Proven with a live failure test (broken build skips deploy) and recovery.
 
 **Layer 4 — Observability + self-hosted model**
-Structured logging, cost dashboards, alerting. Swap the OpenAI API for a local Ollama model on a larger instance — the capstone that ties the whole infra story together.
+Structured logging to CloudWatch, cost and latency dashboards, alerting. Then swap the OpenAI API for a local Ollama model on a larger instance — the capstone that ties the whole infra story together.
 
 ---
 
@@ -142,11 +170,17 @@ Structured logging, cost dashboards, alerting. Swap the OpenAI API for a local O
 ```
 .
 ├── README.md
-├── agent.py
-├── requirements.txt
-└── .gitignore        # covers .pem files, .env, __pycache__
+├── RUNBOOK.md                   # step-by-step operational procedures
+├── layer3-cicd-plan.md          # pipeline design decisions and trade-offs
+├── Dockerfile                   # clones ai_agent at build time; image built by CI
+├── main.tf                      # VPC, EC2, ECR
+├── iam.tf                       # IAM roles: runner (OIDC) + EC2 instance profile
+├── .github/workflows/deploy.yml # the pipeline
+└── .gitignore
 ```
+
+The agent source lives in a separate repo ([AcroIsTrash/ai_agent](https://github.com/AcroIsTrash/ai_agent)). The Dockerfile clones it at build time — this repo is the infra and pipeline only.
 
 ---
 
-*Layer 1 of 4 — deployed manually, documented honestly, improved in layers.*
+*Layer 3 of 4 — push to master, it deploys itself.*
